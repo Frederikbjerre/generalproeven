@@ -1,103 +1,46 @@
-import Image from "next/image";
+import Link from "next/link";
+import { createProject } from "@/app/actions";
+import { AppHeader } from "@/components/AppHeader";
+import { DeleteProjectButton } from "@/components/DeleteProjectButton";
+import { FocusGroupApp } from "@/components/FocusGroupApp";
+import { supabaseEnabled } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 
-export default function Home() {
+export default async function Home() {
+  if (!supabaseEnabled) return <FocusGroupApp />;
+
+  const supabase = await createClient();
+  const { data: projects, error } = await supabase
+    .from("projects")
+    .select("id, name, audience, created_at")
+    .order("created_at", { ascending: false });
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main className="mx-auto max-w-3xl px-4 py-10">
+      <AppHeader title="Dine projekter" />
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      <form action={createProject} className="card mb-8 flex gap-2">
+        <input name="name" required className="input" placeholder="Navn på nyt projekt, fx “Kommune-kampagne Q1”" />
+        <button className="btn-primary shrink-0">Opret projekt</button>
+      </form>
+
+      {error && <p className="text-sm text-red-700">Kunne ikke hente projekter: {error.message}</p>}
+      {projects?.length === 0 && (
+        <p className="py-10 text-center text-stone-500">Du har ingen projekter endnu. Opret dit første ovenfor.</p>
+      )}
+      <ul className="space-y-3">
+        {projects?.map((p) => (
+          <li key={p.id} className="card flex items-center justify-between gap-4 py-4">
+            <Link href={`/projekter/${p.id}`} className="min-w-0 flex-1">
+              <div className="font-semibold hover:underline">{p.name}</div>
+              <div className="truncate text-sm text-stone-500">
+                {p.audience || "Ingen målgruppe endnu"} · {new Date(p.created_at).toLocaleDateString("da-DK")}
+              </div>
+            </Link>
+            <DeleteProjectButton id={p.id} name={p.name} />
+          </li>
+        ))}
+      </ul>
+    </main>
   );
 }
