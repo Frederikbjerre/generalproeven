@@ -6,9 +6,10 @@ import { abStats, type ABReaction, type ABReport, type Persona, type Reaction } 
 import type { Store } from "@/lib/store";
 import { ABReportView } from "./ABReportView";
 import { Avatar } from "./Avatar";
-import { MaterialInput, type MaterialSource } from "./MaterialInput";
+import { MaterialInput, materialReady, type MaterialSource } from "./MaterialInput";
 import { SkepsisBadge } from "./PersonaCard";
 import { StepTitle } from "./StepTitle";
+import { VideoAnswers } from "./VideoAnswers";
 
 export type ABTestData = {
   id: string;
@@ -83,6 +84,8 @@ export function ABTest({ personas, initial, disabled, save, store, onBusyChange,
             persona,
             materialA: a.material,
             materialB: b.material,
+            videoA: a.source.video,
+            videoB: b.source.video,
           });
           setReactions((prev) => ({ ...prev, [persona.id]: { status: "done", reaction } }));
           if (newTestId) void save((s) => s.saveReaction(newTestId, persona.id, reaction));
@@ -119,7 +122,7 @@ export function ABTest({ personas, initial, disabled, save, store, onBusyChange,
   }
 
   const busy = testing || reportLoading;
-  const canRun = a.material.trim() && b.material.trim() && !busy && !disabled;
+  const canRun = materialReady(a.material, a.source) && materialReady(b.material, b.source) && !busy && !disabled;
 
   return (
     <>
@@ -228,6 +231,11 @@ function VersionColumn({ label, r, preferred }: { label: "A" | "B"; r: Reaction;
         </div>
         <span className="text-xs font-semibold">{r.koebsvilje}/10</span>
       </div>
+      {r.video && (
+        <div className="mt-2">
+          <VideoAnswers v={r.video} compact />
+        </div>
+      )}
       <div className="mt-2">
         <span className="label">Største indvending</span>
         <p>{r.stoerste_indvending}</p>

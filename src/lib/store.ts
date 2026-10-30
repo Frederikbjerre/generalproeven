@@ -38,11 +38,11 @@ export function createStore(projectId: string) {
     deletePersona: (id: string) => check(db.from("personas").delete().eq("id", id)),
 
     async createTest(input: {
-      input_type: "text" | "url";
+      input_type: "text" | "url" | "video";
       input_text: string;
       source_url: string | null;
       mode?: "single" | "ab";
-      variant_b_input_type?: "text" | "url";
+      variant_b_input_type?: "text" | "url" | "video";
       variant_b_text?: string;
       variant_b_source_url?: string | null;
     }) {

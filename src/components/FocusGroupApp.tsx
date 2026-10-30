@@ -1,15 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DiscussionMessage, Persona, Reaction, Report } from "@/lib/schemas";
+import { videoStats, type DiscussionMessage, type Persona, type Reaction, type Report } from "@/lib/schemas";
 import { errMsg, post } from "@/lib/http";
 import { createStore, type Store } from "@/lib/store";
 import { ABTest, type ABTestData } from "./ABTest";
 import { Avatar } from "./Avatar";
 import { DiscussionRoom } from "./DiscussionRoom";
-import { MaterialInput, type MaterialSource } from "./MaterialInput";
+import { MaterialInput, materialReady, type MaterialSource } from "./MaterialInput";
 import { PersonaCard, SkepsisBadge } from "./PersonaCard";
 import { ReportView } from "./ReportView";
+import { VideoAnswers } from "./VideoAnswers";
 import { StepTitle } from "./StepTitle";
 
 /** A saved project and its latest test (single or A/B), loaded on the server. Absent in local mode. */
@@ -166,7 +167,7 @@ export function FocusGroupApp({ initial, header }: { initial?: ProjectData; head
     const results = await Promise.all(
       personas.map(async (persona) => {
         try {
-          const { reaction } = await post<{ reaction: Reaction }>("/api/react", { persona, material });
+          const { reaction } = await post<{ reaction: Reaction }>("/api/react", { persona, material, video: source.video });
           setReactions((prev) => ({ ...prev, [persona.id]: { status: "done", reaction } }));
           if (newTestId) void save((s) => s.saveReaction(newTestId, persona.id, reaction));
           return { persona, reaction };
@@ -341,10 +342,12 @@ export function FocusGroupApp({ initial, header }: { initial?: ProjectData; head
               }}
             />
             <div className="flex items-center justify-between">
-              <span className="text-xs text-stone-500">{material.length.toLocaleString("da-DK")} tegn</span>
+              <span className="text-xs text-stone-500">
+                {source.type === "video" ? "" : `${material.length.toLocaleString("da-DK")} tegn`}
+              </span>
               <button
                 className="btn-primary"
-                disabled={!material.trim() || testing || reportLoading || busyIds.size > 0}
+                disabled={!materialReady(material, source) || testing || reportLoading || busyIds.size > 0}
                 onClick={runTest}
               >
                 {testing ? "Personaerne læser…" : "Kør fokusgruppe"}
@@ -434,7 +437,9 @@ export function FocusGroupApp({ initial, header }: { initial?: ProjectData; head
             </p>
           )}
           {reportLoading && <div className="card h-40 animate-pulse text-stone-500">Analyserer reaktionerne…</div>}
-          {report && <ReportView report={report} avgBuy={avgBuy} />}
+          {report && (
+            <ReportView report={report} avgBuy={avgBuy} video={videoStats(doneReactions.map((x) => x.reaction))} />
+          )}
         </section>
       )}
     </main>
@@ -449,6 +454,7 @@ function ReactionBody({ r }: { r: Reaction }) {
       <div><span className="label">Førstehåndsindtryk</span><p>{r.foerstehaandsindtryk}</p></div>
       <div><span className="label">Hvad jeg forstod</span><p>{r.hvad_jeg_forstod}</p></div>
       <div><span className="label">Største indvending</span><p>{r.stoerste_indvending}</p></div>
+      {r.video && <VideoAnswers v={r.video} />}
       <div>
         <span className="label">Ville klikke/købe</span>
         <div className="mt-1 flex items-center gap-2">

@@ -1,4 +1,14 @@
-import { ROUNDS, abStats, type ABReaction, type DiscussionMessage, type Persona, type Reaction } from "./schemas";
+import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import {
+  ROUNDS,
+  abStats,
+  formatTime,
+  type ABReaction,
+  type DiscussionMessage,
+  type Persona,
+  type Reaction,
+  type VideoMaterial,
+} from "./schemas";
 
 export const PERSONA_GENERATOR_SYSTEM = `Du skaber realistiske, syntetiske personas til danske fokusgrupper. Alt output skal være på dansk.
 
@@ -83,7 +93,8 @@ Regler:
 - Præcis 3 top_indvendinger, 3 top_styrker, 5 bedste_citater (ordret fra personaernes citater eller svar), 3 forbedringsforslag.
 - Forbedringsforslag skal være konkrete og handlingsrettede (hvad skal omskrives, tilføjes eller fjernes).
 - Segmenter: brug personaernes segment-labels; angiv 1-2 mest positive og 1-2 mindst positive.
-- Hvis der ikke er reelle styrker, så sig det i forklaringen i stedet for at opfinde dem.`;
+- Hvis der ikke er reelle styrker, så sig det i forklaringen i stedet for at opfinde dem.
+- Er materialet en video, så vægt hook (hvor mange stopper op), om folk ser den færdig, hvad de husker, og om afsenderen er tydelig. Forbedringsforslag skal så være konkrete for videoen (fx åbningsbillede, tekst på skærmen, slutskilt).`;
 
 export function reportUser(
   material: string,
@@ -98,7 +109,7 @@ Førstehåndsindtryk: ${r.foerstehaandsindtryk}
 Forstod: ${r.hvad_jeg_forstod}
 Største indvending: ${r.stoerste_indvending}
 Købsvilje: ${r.koebsvilje}/10 – ${r.koebsvilje_begrundelse}
-Citat: "${r.citat}"`,
+Citat: "${r.citat}"${videoLine(r)}`,
     )
     .join("\n\n");
   return `<materiale>
@@ -194,7 +205,8 @@ Regler:
 - score_a og score_b (0-100) skal afspejle den reelle købsvilje, ikke være høflige.
 - 2-3 styrker og svagheder pr. version, konkrete og med henvisning til teksten.
 - segment_forskelle: brug personaernes segment-labels; medtag kun segmenter, hvor der er en tydelig præference.
-- Præcis 4 bedste_citater (ordret fra svarene) og 3 forbedringsforslag til vinderen (eller til den bedste version ved uafgjort).`;
+- Præcis 4 bedste_citater (ordret fra svarene) og 3 forbedringsforslag til vinderen (eller til den bedste version ved uafgjort).
+- Er versionerne videoer, så vægt hook (hvem stopper op), om de ses færdige, hvad folk husker, og om afsenderen er tydelig.`;
 
 export function abReportUser(
   materialA: string,
@@ -206,8 +218,8 @@ export function abReportUser(
     .map(({ persona: p, reaction: r }) => `## ${p.navn} – ${p.jobtitel}
 Segment: ${p.segment} | Skepsis: ${p.skepsis_score}/10${p.er_afvisende ? " | afvisende" : ""}
 Foretrækker: ${r.foretrukket} – ${r.begrundelse}
-A: købsvilje ${r.a.koebsvilje}/10. Indtryk: ${r.a.foerstehaandsindtryk} Indvending: ${r.a.stoerste_indvending} Citat: "${r.a.citat}"
-B: købsvilje ${r.b.koebsvilje}/10. Indtryk: ${r.b.foerstehaandsindtryk} Indvending: ${r.b.stoerste_indvending} Citat: "${r.b.citat}"`)
+A: købsvilje ${r.a.koebsvilje}/10. Indtryk: ${r.a.foerstehaandsindtryk} Indvending: ${r.a.stoerste_indvending} Citat: "${r.a.citat}"${videoLine(r.a)}
+B: købsvilje ${r.b.koebsvilje}/10. Indtryk: ${r.b.foerstehaandsindtryk} Indvending: ${r.b.stoerste_indvending} Citat: "${r.b.citat}"${videoLine(r.b)}`)
     .join("\n\n");
   return `<version_a>
 ${materialA}
@@ -222,4 +234,66 @@ Optælling: ${votes.A} foretrækker A, ${votes.B} foretrækker B, ${votes.ingen}
 ${blocks}
 
 Afgør testen.`;
+}
+
+// --- Video ---
+
+const VIDEO_QUESTIONS = `Forestil dig, at videoen dukker op i dit feed, og du ser den i realtid. De første 3 sekunder afgør, om du stopper op – de fleste scroller videre.
+Ud over din almindelige reaktion skal du svare på: ville du stoppe op (stopper_op), hvad fangede eller ikke fangede dig i starten, hvor sandsynligt det er, at du ser den færdig (1-10, vær realistisk), hvad du husker bagefter, og hvem du tror står bag. Er afsenderen uklar, så sig det – det er vigtig information.`;
+
+/** A video as content blocks: a short header, then each frame preceded by its timestamp. */
+function videoBlocks(v: VideoMaterial, label: string): BetaContentBlockParam[] {
+  return [
+    {
+      type: "text",
+      text: `<${label}>\nKampagnevideo, varighed ${formatTime(v.duration)}. Herunder ${v.frames.length} stillbilleder i rækkefølge med tidsstempel.${
+        v.script.trim() ? `\nManuskript/speak:\n${v.script.trim()}` : "\nDer er ikke angivet noget manuskript, så du kender kun billederne og teksten i dem."
+      }`,
+    },
+    ...v.frames.flatMap((f): BetaContentBlockParam[] => [
+      { type: "text", text: `[${formatTime(f.t)}]` },
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: f.data } },
+    ]),
+    { type: "text", text: `</${label}>` },
+  ];
+}
+
+export function videoReactionContent(v: VideoMaterial): BetaContentBlockParam[] {
+  return [
+    ...videoBlocks(v, "video"),
+    {
+      type: "text",
+      text: `${VIDEO_QUESTIONS}
+
+Giv også din umiddelbare reaktion: førstehåndsindtryk, hvad du forstod videoen handlede om (også hvis du misforstod noget), din største indvending, hvor sandsynligt det er, at du ville klikke/købe (koebsvilje 1-10) med kort begrundelse, og ét citat, som du ville sige det til en kollega.`,
+    },
+  ];
+}
+
+/** A/B content where each version is either text or a video. */
+export function abReactionContent(
+  first: { text: string; video?: VideoMaterial },
+  second: { text: string; video?: VideoMaterial },
+): string | BetaContentBlockParam[] {
+  if (!first.video && !second.video) return abReactionUser(first.text, second.text);
+  const block = (m: { text: string; video?: VideoMaterial }, label: string): BetaContentBlockParam[] =>
+    m.video ? videoBlocks(m.video, label) : [{ type: "text", text: `<${label}>\n${m.text}\n</${label}>` }];
+  return [
+    { type: "text", text: "Du får to versioner af den samme kampagne. Vurdér dem hver for sig, som om du så hver af dem alene." },
+    ...block(first, "version_1"),
+    ...block(second, "version_2"),
+    {
+      type: "text",
+      text: `${VIDEO_QUESTIONS}
+
+For hver version: førstehåndsindtryk, hvad du forstod, største indvending, købsvilje 1-10 med kort begrundelse, ét citat og video-spørgsmålene ovenfor.
+Vælg derefter, hvilken version du foretrækker. "ingen" er et gyldigt svar. Er de lige gode eller lige dårlige, så sig det – opfind ikke forskelle.`,
+    },
+  ];
+}
+
+export function videoLine(r: Reaction) {
+  if (!r.video) return "";
+  const v = r.video;
+  return `\nVideo: ${v.stopper_op ? "stopper op" : "scroller forbi"} (${v.hook_vurdering}); ser til ende ${v.ville_se_til_ende}/10; husker: ${v.hvad_jeg_husker}; tror afsenderen er: ${v.hvem_er_afsenderen}`;
 }

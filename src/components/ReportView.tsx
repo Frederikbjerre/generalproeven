@@ -6,7 +6,14 @@ function scoreTone(score: number) {
   return "text-red-700";
 }
 
-export function ReportView({ report, avgBuy }: { report: Report; avgBuy: number }) {
+type Props = {
+  report: Report;
+  avgBuy: number;
+  /** Feed metrics when the material was a video */
+  video?: { stopShare: number; avgWatch: number } | null;
+};
+
+export function ReportView({ report, avgBuy, video }: Props) {
   return (
     <div className="space-y-6">
       <div className="rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
@@ -19,6 +26,11 @@ export function ReportView({ report, avgBuy }: { report: Report; avgBuy: number 
           <div className={`text-6xl font-bold ${scoreTone(report.samlet_score)}`}>{report.samlet_score}</div>
           <div className="text-sm text-stone-500">Samlet score / 100</div>
           <div className="mt-1 text-xs text-stone-500">Gns. købsvilje {avgBuy.toFixed(1)}/10</div>
+          {video && (
+            <div className="mt-1 text-xs text-stone-500">
+              {Math.round(video.stopShare * 100)}% stopper op · ser til ende {video.avgWatch.toFixed(1)}/10
+            </div>
+          )}
         </div>
         <p className="flex-1 text-stone-700">{report.samlet_vurdering}</p>
       </div>

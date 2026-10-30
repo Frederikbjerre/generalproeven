@@ -1,5 +1,16 @@
 import "server-only";
-import { abStats, type ABChoice, type ABReaction, type ABReport, type DiscussionMessage, type Persona, type Reaction, type Report } from "./schemas";
+import {
+  abStats,
+  type ABChoice,
+  type ABReaction,
+  type ABReport,
+  type DiscussionMessage,
+  type Persona,
+  type Reaction,
+  type Report,
+  type VideoFields,
+  type VideoMaterial,
+} from "./schemas";
 
 // Demo mode: canned Danish data so the whole flow can be tried without an API key.
 // Active when ANTHROPIC_API_KEY is unset, or forced with DEMO_MODE=1.
@@ -118,9 +129,10 @@ function segmentFor(p: Base, audience: string) {
 
 const pick = <T,>(xs: T[], seed: number) => xs[seed % xs.length];
 
-export function demoReaction(p: Persona, material: string): Reaction {
+export function demoReaction(p: Persona, material: string, video?: VideoMaterial): Reaction {
   const seed = p.navn.length + material.length;
-  const teaser = material.trim().replace(/\s+/g, " ").slice(0, 70);
+  const source = video ? video.script || video.fileName : material;
+  const teaser = source.trim().replace(/\s+/g, " ").slice(0, 70);
   const buy = Math.max(1, Math.min(10, 11 - p.skepsis_score + ((seed % 3) - 1)));
   const tier = p.er_afvisende ? "hostile" : p.skepsis_score >= 7 ? "skeptic" : p.skepsis_score >= 5 ? "neutral" : "open";
   const t = {
@@ -143,7 +155,7 @@ export function demoReaction(p: Persona, material: string): Reaction {
   }[tier];
   return {
     foerstehaandsindtryk: t.indtryk,
-    hvad_jeg_forstod: `At "${teaser}${material.length > 70 ? "…" : ""}" er en form for løsning, der skal spare tid – men hvad den præcist gør, står ikke klart.`,
+    hvad_jeg_forstod: `At "${teaser}${source.length > 70 ? "…" : ""}" er en form for løsning, der skal spare tid – men hvad den præcist gør, står ikke klart.`,
     stoerste_indvending: pick(p.kaepheste, seed),
     koebsvilje: buy,
     koebsvilje_begrundelse:
@@ -151,6 +163,20 @@ export function demoReaction(p: Persona, material: string): Reaction {
       : buy >= 4 ? "Ikke nu. Jeg skal se mere konkret dokumentation først."
       : "Nej. Intet her rammer et problem, jeg har lige nu.",
     citat: t.citat,
+    ...(video && { video: demoVideoFields(tier, buy, seed) }),
+  };
+}
+
+function demoVideoFields(tier: "hostile" | "skeptic" | "neutral" | "open", buy: number, seed: number): VideoFields {
+  const stops = tier === "open" || (tier === "neutral" && seed % 2 === 0);
+  return {
+    stopper_op: stops,
+    hook_vurdering: stops
+      ? "Åbningsbilledet er roligt, men der står en konkret påstand på skærmen, der fik mig til at blive."
+      : "De første sekunder ligner alle andre reklamer. Jeg var videre, før jeg vidste, hvad det handlede om.",
+    ville_se_til_ende: Math.max(1, Math.min(10, buy + (stops ? 2 : -1))),
+    hvad_jeg_husker: stops ? "At det skulle spare tid, og slutskiltet med prisen." : "Ikke ret meget. Noget med en skærm og en glad medarbejder.",
+    hvem_er_afsenderen: tier === "hostile" || seed % 3 === 0 ? "Aner det ikke – logoet kom først til sidst." : "Den virksomhed, hvis logo står på slutskiltet.",
   };
 }
 
@@ -256,9 +282,15 @@ export function demoStream(text: string) {
 
 // --- A/B mode ---
 
-export function demoABReaction(p: Persona, materialA: string, materialB: string): ABReaction {
-  const a = demoReaction(p, materialA);
-  const b = demoReaction(p, materialB);
+export function demoABReaction(
+  p: Persona,
+  materialA: string,
+  materialB: string,
+  videoA?: VideoMaterial,
+  videoB?: VideoMaterial,
+): ABReaction {
+  const a = demoReaction(p, materialA, videoA);
+  const b = demoReaction(p, materialB, videoB);
   // Deterministic but persona-dependent nudge, so the demo shows a split vote
   const nudge = ((p.navn.length + materialB.length - materialA.length) % 3) - 1;
   b.koebsvilje = Math.max(1, Math.min(10, b.koebsvilje + nudge + (materialB.length > materialA.length ? 1 : 0)));

@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { z } from "zod";
 import { supabaseEnabled } from "./supabase/config";
 
@@ -41,7 +42,8 @@ function toClaudeError(err: unknown): unknown {
 export async function callJson<T extends z.ZodType>(opts: {
   schema: T;
   system: string;
-  user: string;
+  /** Plain text, or content blocks when images (video frames) are included. */
+  user: string | BetaContentBlockParam[];
   effort?: Effort;
   maxTokens?: number;
 }): Promise<z.infer<T>> {

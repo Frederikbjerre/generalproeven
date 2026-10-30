@@ -32,7 +32,40 @@ export const ReactionSchema = z.object({
   koebsvilje_begrundelse: z.string(),
   citat: z.string().describe("Ét citat i personaens egen stemme"),
 });
-export type Reaction = z.infer<typeof ReactionSchema>;
+
+// --- Video ---
+
+/** Extra questions that only make sense for a video seen in a feed. */
+export const VideoFieldsSchema = z.object({
+  stopper_op: z.boolean().describe("Ville du stoppe op i dit feed inden for de første 3 sekunder?"),
+  hook_vurdering: z.string().describe("Hvad fangede (eller ikke fangede) dig i starten"),
+  ville_se_til_ende: z.number().int().describe("1-10: hvor sandsynligt er det, at du ser videoen færdig?"),
+  hvad_jeg_husker: z.string().describe("Det du husker bagefter, med dine egne ord"),
+  hvem_er_afsenderen: z.string().describe("Hvem du tror står bag. Sig det, hvis det er uklart."),
+});
+export type VideoFields = z.infer<typeof VideoFieldsSchema>;
+
+export const VideoReactionSchema = ReactionSchema.extend({ video: VideoFieldsSchema });
+
+export type Reaction = z.infer<typeof ReactionSchema> & { video?: VideoFields };
+
+/** A campaign video as the models see it: still frames with timestamps plus an optional script. */
+export type VideoMaterial = {
+  fileName: string;
+  duration: number;
+  /** JPEG frames as base64 (no data: prefix), in order */
+  frames: { t: number; data: string }[];
+  script: string;
+};
+
+export const formatTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+/** The text stand-in for a video, used everywhere that only needs text (discussion, report, storage). */
+export function videoAsText(v: Pick<VideoMaterial, "fileName" | "duration" | "frames" | "script">) {
+  return `[Kampagnevideo: ${v.fileName}, ${formatTime(v.duration)} min., vist som ${v.frames.length} stillbilleder]${
+    v.script.trim() ? `\n\nManuskript/speak:\n${v.script.trim()}` : "\n\n(Intet manuskript angivet.)"
+  }`;
+}
 
 export const ReportSchema = z.object({
   samlet_score: z.number().int().describe("0-100"),
@@ -67,12 +100,15 @@ export const ModeratorSchema = z.object({
 // --- A/B mode ---
 
 // What the model sees: neutral labels in a random order per persona, to avoid position bias.
-export const ABReactionModelSchema = z.object({
-  version_1: ReactionSchema,
-  version_2: ReactionSchema,
-  foretrukket: z.enum(["version_1", "version_2", "ingen"]),
-  begrundelse: z.string().describe("Kort, i egen stemme: hvorfor den ene frem for den anden (eller ingen)"),
-});
+export function abReactionModelSchema(video: boolean) {
+  const reaction = video ? VideoReactionSchema : ReactionSchema;
+  return z.object({
+    version_1: reaction,
+    version_2: reaction,
+    foretrukket: z.enum(["version_1", "version_2", "ingen"]),
+    begrundelse: z.string().describe("Kort, i egen stemme: hvorfor den ene frem for den anden (eller ingen)"),
+  });
+}
 
 export type ABChoice = "A" | "B" | "ingen";
 
@@ -107,5 +143,23 @@ export function abStats(reactions: ABReaction[]) {
     },
     avgA: reactions.reduce((s, r) => s + r.a.koebsvilje, 0) / n,
     avgB: reactions.reduce((s, r) => s + r.b.koebsvilje, 0) / n,
+  };
+}
+
+/** Feed metrics across video reactions; null when none of them were for a video. */
+export function videoStats(reactions: Reaction[]) {
+  const v = reactions.flatMap((r) => (r.video ? [r.video] : []));
+  if (!v.length) return null;
+  return {
+    stopShare: v.filter((x) => x.stopper_op).length / v.length,
+    avgWatch: v.reduce((s, x) => s + x.ville_se_til_ende, 0) / v.length,
+  };
+}
+
+export function clampReaction(r: Reaction): Reaction {
+  return {
+    ...r,
+    koebsvilje: clamp(r.koebsvilje, 1, 10),
+    ...(r.video && { video: { ...r.video, ville_se_til_ende: clamp(r.video.ville_se_til_ende, 1, 10) } }),
   };
 }
